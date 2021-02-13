@@ -1,9 +1,11 @@
 #include <EtherCard.h>
+#include <RH_ASK.h>
 
 static byte MAC[] = { 0xDE,0xAD,0xC0,0xDE,0x00,0x00 };
 
 byte Ethernet::buffer[500];
 BufferFiller bfill;
+RH_ASK driver(2000, 3, 4);
 
 void setup (){
   Serial.begin(57600);
@@ -12,17 +14,24 @@ void setup (){
   Serial.print("MAC: ");
   for (byte i = 0; i < 6; ++i) {
     Serial.print(MAC[i], HEX);
-    if (i < 5)
+    if (i < 5) {
       Serial.print(':');
+    }
   }
   Serial.println();
 
-  if (ether.begin(sizeof Ethernet::buffer, MAC, SS) == 0)
+  if (!driver.init()) {
+    Serial.println("RadioHead driver init failed");
+  }
+  
+  if (ether.begin(sizeof Ethernet::buffer, MAC, SS) == 0) {
     Serial.println(F("Failed to access Ethernet controller"));
-
+  }
+  
   Serial.println(F("Setting up DHCP"));
-  if (!ether.dhcpSetup())
+  if (!ether.dhcpSetup()) {
     Serial.println(F("DHCP failed"));
+  }
 
   ether.printIp("My IP: ", ether.myip);
   ether.printIp("Netmask: ", ether.netmask);
@@ -58,6 +67,8 @@ static word badRequest() {
 }
 
 void loop (){
+  uint8_t RHBuf[RH_ASK_MAX_MESSAGE_LEN];
+  uint8_t RHBufLen = sizeof(RHBuf);
   word len = ether.packetReceive();
   word pos = ether.packetLoop(len);
 
@@ -92,10 +103,10 @@ void loop (){
         if (portIndex && dataIndex) {
           data[delPos] = 0;
           int port = atoi((char *)(portIndex+5));
-          /*
-           * Serial.println(port);
-           * Serial.println(strlen(dataIndex+5));
-           */
+          memset(dataIndex, 32, 5);
+          memcpy(dataIndex, portIndex+5, 5);
+          driver.send((uint8_t *)dataIndex, strlen(dataIndex) < 64 ? strlen(dataIndex) : 64);
+          driver.waitPacketSent();
           ether.httpServerReply(returnData()); 
         } else {
           ether.httpServerReply(badRequest()); 
